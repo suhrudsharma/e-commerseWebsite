@@ -1,7 +1,10 @@
+const { animate, stagger, inView } = Motion;
 // Global variables
 let products = [];
 let filteredProducts = [];
 let cart = JSON.parse(localStorage.getItem('cart')) || [];
+let currentPage = 1;
+const productsPerPage = 6;
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
@@ -46,14 +49,17 @@ async function loadCategories() {
 // Display products in grid
 function displayProducts(productsToDisplay) {
     const productsGrid = document.getElementById('products-grid');
+    const startIndex = (currentPage - 1) * productsPerPage;
+    const endIndex = startIndex + productsPerPage;
+    const paginatedItems = productsToDisplay.slice(startIndex, endIndex);
     
     if (productsToDisplay.length === 0) {
         productsGrid.innerHTML = '<div class="loading">No products found matching your criteria.</div>';
         return;
     }
     
-    productsGrid.innerHTML = productsToDisplay.map(product => `
-        <div class="product-card" onclick="openProductDetail(${product.id})">
+    productsGrid.innerHTML = paginatedItems.map(product => `
+        <div class="product-card" onclick="openProductDetail(${product.id}, event)">
             <img src="${product.image}" alt="${product.title}" class="product-image">
             <div class="product-info">
                 <div class="product-title">${product.title}</div>
@@ -69,16 +75,42 @@ function displayProducts(productsToDisplay) {
             </div>
         </div>
     `).join('');
+    inView(
+        ".product-card", 
+        (info) => {
+            // This code runs for EACH card as it enters the screen
+            animate(
+                info.target,
+                { 
+                    opacity: [0, 1], // Fade in
+                    y: [10, 0]         // Slide up
+                },
+                { 
+                    duration: 0.5, 
+                    ease: "ease-out" 
+                }
+            );
+        },
+        {
+            // Trigger animation when 20% of the card is visible
+            amount: 0.2 
+        }
+    );
+    renderPagination(productsToDisplay.length);
 }
 
 // Open product detail modal
-async function openProductDetail(productId) {
-    const product = products.find(p => p.id === productId);
+// in script.js
+async function openProductDetail(productId, event) {
+    const cardElement = event.currentTarget;
+    const product = products.find(p => p.id == productId);
     if (!product) return;
-    
+
     const modal = document.getElementById('product-modal');
+    const modalContent = modal.querySelector('.modal-content');
     const productDetail = document.getElementById('product-detail');
-    
+
+    // 1. Populate modal HTML
     productDetail.innerHTML = `
         <div class="product-detail-image">
             <img src="${product.image}" alt="${product.title}">
@@ -97,13 +129,77 @@ async function openProductDetail(productId) {
             </div>
         </div>
     `;
-    
+
+    // 2. Hide internal content for fade-in
+    const modalImage = productDetail.querySelector('.product-detail-image');
+    const modalInfo = productDetail.querySelector('.product-detail-info');
+    [modalImage, modalInfo].forEach(el => el.style.opacity = 0);
+
+    // 3. Get positions
+    const cardRect = cardElement.getBoundingClientRect();
+
+    // Reset modal styles to measure its *final* centered position
+    modalContent.style.transform = null;
+    modalContent.style.opacity = null; 
     modal.style.display = 'block';
+    
+    const modalRect = modalContent.getBoundingClientRect();
+
+    // 4. Calculate the 'from' state
+    const deltaX = cardRect.left - modalRect.left;
+    const deltaY = cardRect.top - modalRect.top;
+    const scaleX = cardRect.width / modalRect.width;
+    const scaleY = cardRect.height / modalRect.height;
+
+    // 5. Run the new animation
+    animate(
+        modalContent,
+        {
+            // Start at the card's position and scale
+            transform: [
+                `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`,
+                'none' // Animate to its default (centered) state
+            ],
+            opacity: [0, 1]
+        },
+        {
+            duration: 0.4,
+            ease: [0.16, 1, 0.3, 1] // A nice "quint" ease-out
+        }
+    );
+
+    // 6. Fade in the modal's internal content
+    animate(
+        [modalImage, modalInfo],
+        { opacity: [0, 1] },
+        { delay: 0.2, duration: 0.3 }
+    );
 }
 
 // Close modal
+// in script.js
 function closeModal() {
-    document.getElementById('product-modal').style.display = 'none';
+    const modal = document.getElementById('product-modal');
+    const modalContent = modal.querySelector('.modal-content');
+    const productDetail = document.getElementById('product-detail');
+    
+    // Animate the whole modal out
+    animate(
+        modal,
+        { opacity: [1, 0] },
+        { duration: 0.25, ease: 'ease-out' }
+    ).finished.then(() => {
+        // --- THIS IS THE CRITICAL RESET PART ---
+        modal.style.display = 'none'; 
+        modal.style.opacity = 1;      
+        
+        // Reset modal content for next open
+        modalContent.style.opacity = null;
+        modalContent.style.transform = null;
+
+        // Clear out old content
+        productDetail.innerHTML = '';
+    });
 }
 
 // Close modal when clicking outside
@@ -111,6 +207,37 @@ window.onclick = function(event) {
     const modal = document.getElementById('product-modal');
     if (event.target === modal) {
         closeModal();
+    }
+}
+
+// Render pagination
+
+function renderPagination(totalItems) {
+    const paginationControls = document.getElementById('pagination-controls');
+    const totalPages = Math.ceil(totalItems / productsPerPage);
+
+    // Clear old buttons
+    paginationControls.innerHTML = '';
+
+    // Don't show controls if there's only one page
+    if (totalPages <= 1) return;
+
+    for (let i = 1; i <= totalPages; i++) {
+        const pageButton = document.createElement('button');
+        pageButton.textContent = i;
+        pageButton.classList.add('page-btn');
+        if (i === currentPage) {
+            pageButton.classList.add('active');
+        }
+
+        pageButton.onclick = () => {
+            currentPage = i;
+            displayProducts(filteredProducts); // Re-render products for the new page
+            
+            // Scroll to the top of the products section
+            document.getElementById('products').scrollIntoView({ behavior: 'smooth' });
+        };
+        paginationControls.appendChild(pageButton);
     }
 }
 
@@ -218,7 +345,7 @@ function handleSearch() {
         
         return matchesSearch && matchesCategory && matchesPrice;
     });
-    
+    currentPage = 1;
     displayProducts(filteredProducts);
 }
 

@@ -1,5 +1,7 @@
 # ShopHub - E-Commerce Website
 
+The website will provide a smooth and engaging shopping experience with features such as product listing, detailed product pages.
+
 A fully responsive, front-end e-commerce website that fetches data from the FakeStore API. Built with HTML, CSS, and JavaScript.
 
 ## Features
@@ -137,4 +139,3 @@ Developed as part of an e-commerce project.
 
 - [FakeStore API](https://fakestoreapi.com) for product data
 - Modern CSS techniques and JavaScript best practices
-
